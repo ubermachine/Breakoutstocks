@@ -4,8 +4,8 @@ Plan: `docs/superpowers/plans/2026-08-08-unified-scanner-restructure.md`
 Base Commit: `f2f464e0f77abd260b98064fb606402600a39b04`
 
 ## Tasks
-- [x] Task 1: Project Scaffolding, Config, and Models
-- [ ] Task 2: Data Lake Client
+- [x] Task 1: Project Scaffolding, Config, and Models (commits 28773d8..5e21b54, review clean)
+- [x] Task 2: Data Lake Client (commits 5e21b54..3dd5377, review clean)
 - [ ] Task 3: NSE Live Client
 - [ ] Task 4: Unified MarketDataClient
 - [ ] Task 5: Technical Indicators Module
@@ -16,5 +16,5 @@ Base Commit: `f2f464e0f77abd260b98064fb606402600a39b04`
 - [ ] Task 10: Cleanup and Final Verification
 
 ## Log
-- 2026-08-08: Task 1 completed (commit 28773d8). Package layout, Config, models, logging, requirements.txt set up.
-
+- Task 1: complete (commits 28773d8..5e21b54, review clean)
+- Task 2: complete (commits 5e21b54..3dd5377, review clean)
