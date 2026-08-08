@@ -125,6 +125,7 @@ class Config:
     MIN_PROFIT_MARGIN: float = 0.10
     MAX_DEBT_EQUITY: float = 1.0
     MIN_ROE: float = 0.15
+    MULTIBAGGER_RETURN_THRESHOLD: float = 1.0
 
     # Execution & Directory settings
     MAX_WORKERS: int = 10

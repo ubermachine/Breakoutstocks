@@ -9,8 +9,8 @@ Base Commit: `f2f464e0f77abd260b98064fb606402600a39b04`
 - [x] Task 3: NSE Live Client (commits 3dd5377..0a107de, review clean)
 - [x] Task 4: Unified MarketDataClient (commits 0a107de..9db4283, review clean)
 - [x] Task 5: Technical Indicators Module (commits 9db4283..5232141, review clean)
-- [ ] Task 6: F&O Scoring Engine (TestableScorer)
-- [x] Task 7: Base Scanner + Breakout/Reversal Scanner (commit f7611a6)
+- [x] Task 6: F&O Scoring Engine (TestableScorer) (commits 5232141..edbb232, review clean)
+- [x] Task 7: Base Scanner + Breakout/Reversal Scanner (commits edbb232..f7611a6, review clean)
 - [ ] Task 8: Multibagger Scanner
 - [ ] Task 9: Unified Streamlit Dashboard
 - [ ] Task 10: Cleanup and Final Verification
@@ -21,4 +21,5 @@ Base Commit: `f2f464e0f77abd260b98064fb606402600a39b04`
 - Task 3: complete (commits 3dd5377..0a107de, review clean)
 - Task 4: complete (commits 0a107de..9db4283, review clean)
 - Task 5: complete (commits 9db4283..5232141, review clean)
-- Task 7: complete (commit f7611a6)
+- Task 6: complete (commits 5232141..edbb232, review clean)
+- Task 7: complete (commits edbb232..f7611a6, review clean)
