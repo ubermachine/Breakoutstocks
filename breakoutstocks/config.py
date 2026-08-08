@@ -36,6 +36,69 @@ class Config:
     MIN_VOLUME: float = 200000.0
     VOLUME_RATIO_THRESHOLD: float = 2.0
 
+    # Cash Score parameters
+    CASH_VOL_RATIO_LOW: float = 2.0
+    CASH_VOL_RATIO_HIGH: float = 3.0
+    CASH_VOL_RATIO_LOW_PTS: float = 8.0
+    CASH_VOL_RATIO_HIGH_PTS: float = 4.0
+    CASH_AVG_VOL_PTS: float = 4.0
+    CASH_BULLISH_CLOSE_PTS: float = 4.0
+
+    # Price Score parameters
+    PRICE_BREAKOUT_HIGH_PTS: float = 8.0
+    PRICE_CLOSE_ABOVE_PREV_PTS: float = 4.0
+    PRICE_ABOVE_EMA_PTS: float = 4.0
+    PRICE_RSI_MOMENTUM_PTS: float = 4.0
+    RSI_MOMENTUM_MIN: float = 45.0
+
+    # Delivery Score parameters
+    DELIVERY_RATIO_MIN: float = 1.3
+    DELIVERY_RATIO_PTS: float = 5.0
+    DELIVERY_PCT_MIN: float = 0.5
+    DELIVERY_PCT_PTS: float = 5.0
+
+    # Futures Score parameters
+    FUTURES_CLOSE_UP_PTS: float = 5.0
+    FUTURES_OI_UP_PTS: float = 5.0
+    FUTURES_PREMIUM_PTS: float = 5.0
+
+    # Options Score parameters
+    OPTIONS_PCR_RISING_PTS: float = 5.0
+    OPTIONS_PUT_WRITING_PTS: float = 6.0
+    OPTIONS_CALL_UNWINDING_PTS: float = 5.0
+    OPTIONS_SAFE_IV_PTS: float = 4.0
+    IV_PERCENTILE_SAFE_MAX: float = 80.0
+
+    # Market Score parameters
+    MARKET_NIFTY_20SMA_PTS: float = 3.0
+    MARKET_VIX_DROP_PTS: float = 3.0
+    MARKET_FII_DII_PTS: float = 4.0
+
+    # Risk Penalty parameters
+    RISK_EARNINGS_PENALTY: float = 10.0
+    RISK_FNO_BAN_PENALTY: float = 10.0
+    RISK_HIGH_IV_PENALTY: float = 5.0
+    RISK_PUT_UNWINDING_PENALTY: float = 5.0
+    RISK_RESISTANCE_CLOSE_PENALTY: float = 5.0
+    IV_PERCENTILE_EXTREME: float = 90.0
+    EARNINGS_RISK_DAYS: int = 3
+    RESISTANCE_ATR_MULT: float = 0.5
+
+    # Regime Downgrade & Warnings
+    REGIME_DOWNGRADE_STRONG_BUY: float = 10.0
+    REGIME_DOWNGRADE_BUY: float = 15.0
+    REGIME_DOWNGRADE_OTHER: float = 20.0
+    MAX_WARNINGS_FOR_UPPER_TIERS: int = 3
+
+    # Trade Plan parameters
+    TRADE_PLAN_ATR_MULT_SL: float = 1.5
+    TRADE_PLAN_ATR_MULT_T1: float = 1.5
+    TRADE_PLAN_ATR_MULT_T2: float = 2.5
+    TRADE_PLAN_PUT_SUPPORT_MULT: float = 1.002
+    TRADE_PLAN_CALL_RESISTANCE_MULT: float = 0.998
+    RR_MEDIUM_THRESHOLD: float = 1.5
+    RR_SMALL_THRESHOLD: float = 1.2
+
     # Breakout & Reversal thresholds
     VOLUME_RATIO_BREAKOUT: float = 1.5
     VOLUME_RATIO_SMA_CROSS: float = 1.3
