@@ -152,10 +152,10 @@ class MarketDataClient:
 
         # Process FII/DII data
         if isinstance(fii_dii, dict):
-            fii_net = float(fii_dii.get("fii_net", 0.0))
-            dii_net = float(fii_dii.get("dii_net", 0.0))
-            fii_trend = str(fii_dii.get("fii_trend", "NEUTRAL"))
-            dii_trend = str(fii_dii.get("dii_trend", "NEUTRAL"))
+            fii_net = float(fii_dii.get("fii_net") or 0.0)
+            dii_net = float(fii_dii.get("dii_net") or 0.0)
+            fii_trend = str(fii_dii.get("fii_trend") or "NEUTRAL")
+            dii_trend = str(fii_dii.get("dii_trend") or "NEUTRAL")
             fii_dii_bias_positive = bool((fii_net + dii_net) > 0)
 
         # Calculate composite regime_score (0.0 to 10.0 scale)
