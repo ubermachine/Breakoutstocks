@@ -2,7 +2,7 @@
 
 import logging
 import math
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 
 import pandas as pd
 
