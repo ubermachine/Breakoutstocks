@@ -213,7 +213,8 @@ class NSELiveClient:
                     continue
                 parts = [p.strip().upper() for p in line.split(",") if p.strip()]
                 for part in parts:
-                    if part.isalnum() and not part.isdigit() and len(part) >= 2:
+                    clean_part = part.replace("&", "").replace("-", "").replace("_", "")
+                    if clean_part.isalnum() and not clean_part.isdigit() and len(part) >= 2:
                         if part not in banned_symbols:
                             banned_symbols.append(part)
             return banned_symbols
