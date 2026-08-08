@@ -130,8 +130,8 @@ class TestableScorer:
         if row.get('put_oi_change_below_spot', 0) < 0:
             penalty += self.config.RISK_PUT_UNWINDING_PENALTY
 
-        distance = row.get('distance_to_call_resistance', 999)
-        atr = row.get('atr', 1)
+        distance = row.get('distance_to_call_resistance', self.config.DEFAULT_DISTANCE_FALLBACK)
+        atr = row.get('atr', self.config.DEFAULT_ATR_FALLBACK)
         if distance < self.config.RESISTANCE_ATR_MULT * atr:
             penalty += self.config.RISK_RESISTANCE_CLOSE_PENALTY
 
@@ -156,11 +156,11 @@ class TestableScorer:
         row['risk_penalty'] = risk
 
         final = cash + price + delivery + futures + options + market - risk
-        return float(np.clip(final, 0.0, 100.0))
+        return max(0.0, min(100.0, final))
 
     def generate_advice(self, row: pd.Series) -> Tuple[Advice, List[str]]:
         """Generate final advice based on score and rules."""
-        warnings = []
+        warnings: List[str] = []
         score = float(row.get('final_score', 0.0))
 
         # Hard vetoes
@@ -176,8 +176,8 @@ class TestableScorer:
         if row.get('put_oi_change_below_spot', 0) < 0:
             warnings.append("Put writers may be exiting")
 
-        distance = row.get('distance_to_call_resistance', 999)
-        atr = row.get('atr', 1)
+        distance = row.get('distance_to_call_resistance', self.config.DEFAULT_DISTANCE_FALLBACK)
+        atr = row.get('atr', self.config.DEFAULT_ATR_FALLBACK)
         if distance < self.config.RESISTANCE_ATR_MULT * atr:
             warnings.append("Call resistance is very close")
 
@@ -215,10 +215,10 @@ class TestableScorer:
 
         close = float(row.get('close', 0.0))
         prev_high = float(row.get('prev_high', close))
-        atr = float(row.get('atr', close * 0.02))
-        put_support = float(row.get('put_support_strike', close * 0.95))
-        call_resistance = float(row.get('call_resistance_strike', close * 1.05))
-        low = float(row.get('low', close * 0.98))
+        atr = float(row.get('atr', close * self.config.DEFAULT_ATR_FALLBACK_MULT))
+        put_support = float(row.get('put_support_strike', close * self.config.DEFAULT_PUT_SUPPORT_FALLBACK_MULT))
+        call_resistance = float(row.get('call_resistance_strike', close * self.config.DEFAULT_CALL_RESISTANCE_FALLBACK_MULT))
+        low = float(row.get('low', close * self.config.DEFAULT_LOW_FALLBACK_MULT))
 
         # Entry logic
         if advice in [Advice.STRONG_BUY, Advice.BUY]:
@@ -246,9 +246,11 @@ class TestableScorer:
         target_1 = entry + self.config.TRADE_PLAN_ATR_MULT_T1 * risk
         target_2 = entry + self.config.TRADE_PLAN_ATR_MULT_T2 * risk
 
-        # Cap targets at resistance
+        # Cap targets at resistance safely without negative risk-reward
         if pd.notna(call_resistance) and call_resistance > 0:
-            target_1 = min(target_1, call_resistance * self.config.TRADE_PLAN_CALL_RESISTANCE_MULT)
+            cap = call_resistance * self.config.TRADE_PLAN_CALL_RESISTANCE_MULT
+            target_1 = max(entry, min(target_1, cap))
+            target_2 = max(target_1, min(target_2, cap * 1.05))
 
         # Risk-reward ratio
         rr = round((target_1 - entry) / risk, 2) if risk > 0 else 0.0

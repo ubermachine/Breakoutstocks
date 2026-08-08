@@ -1,8 +1,8 @@
 """Global configuration dataclass and constants."""
 
 import os
-from dataclasses import dataclass
-from typing import Optional
+from dataclasses import dataclass, field
+from typing import Dict, Optional
 
 
 @dataclass
@@ -96,6 +96,12 @@ class Config:
     TRADE_PLAN_ATR_MULT_T2: float = 2.5
     TRADE_PLAN_PUT_SUPPORT_MULT: float = 1.002
     TRADE_PLAN_CALL_RESISTANCE_MULT: float = 0.998
+    DEFAULT_ATR_FALLBACK_MULT: float = 0.02
+    DEFAULT_PUT_SUPPORT_FALLBACK_MULT: float = 0.95
+    DEFAULT_CALL_RESISTANCE_FALLBACK_MULT: float = 1.05
+    DEFAULT_LOW_FALLBACK_MULT: float = 0.98
+    DEFAULT_DISTANCE_FALLBACK: float = 999.0
+    DEFAULT_ATR_FALLBACK: float = 1.0
     RR_MEDIUM_THRESHOLD: float = 1.5
     RR_SMALL_THRESHOLD: float = 1.2
 
@@ -104,6 +110,14 @@ class Config:
     VOLUME_RATIO_SMA_CROSS: float = 1.3
     RSI_OVERSOLD: float = 30.0
     RSI_OVERBOUGHT: float = 70.0
+    SIGNAL_STRENGTH_WEIGHTS: Dict[str, float] = field(
+        default_factory=lambda: {
+            "VERY_STRONG": 4.0,
+            "STRONG": 3.0,
+            "MODERATE": 2.0,
+            "WEAK": 1.0,
+        }
+    )
 
     # Fundamental Multibagger criteria
     MAX_PE: float = 30.0
