@@ -1,20 +1,7 @@
-# Output files
-output/
-*_20260808_*.csv
-
-# Python cache & build artifacts
+# Ignore output files but keep directory
+output/*
+!output/.gitkeep
 __pycache__/
 *.pyc
-*.pyo
-*.pyd
-*.egg-info/
 .pytest_cache/
-.coverage
-htmlcov/
-
-# Virtual environments & IDEs
-.venv/
-venv/
-ENV/
-.idea/
-.vscode/
+.superpowers/sdd/*.patch
