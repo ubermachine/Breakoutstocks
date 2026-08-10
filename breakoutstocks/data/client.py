@@ -93,6 +93,11 @@ class MarketDataClient:
 
     def get_nifty_data(self, days: int = 30) -> Optional[pd.DataFrame]:
         """Get Nifty 50 index daily bars using ^NSEI ticker."""
+        # Try Data Lake first for Nifty 50
+        df = self.lake.get_sector_index("^NSEI", days=days)
+        if df is not None and not df.empty:
+            return df
+        # Fallback to yfinance via get_stock_ohlcv
         return self.get_stock_ohlcv("^NSEI", days=days)
 
     def get_vix_data(self, days: int = 30) -> Optional[pd.DataFrame]:
