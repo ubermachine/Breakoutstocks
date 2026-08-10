@@ -689,8 +689,8 @@ def main():
         with card2:
             st.metric(
                 "VIX Signal",
-                market_regime.vix_signal,
-                delta=f"{market_regime.vix_percent_change:.1f}%",
+                f"{market_regime.vix_level:.2f}" if market_regime.vix_level else "N/A",
+                delta=f"{market_regime.vix_change_pct:.1f}%",
                 delta_color="inverse",
             )
         with card3:
