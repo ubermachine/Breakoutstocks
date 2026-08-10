@@ -102,6 +102,11 @@ class MarketDataClient:
 
     def get_vix_data(self, days: int = 30) -> Optional[pd.DataFrame]:
         """Get India VIX daily bars using ^INDIAVIX ticker."""
+        # Try Data Lake first for VIX
+        df = self.lake.get_sector_index("^INDIAVIX", days=days)
+        if df is not None and not df.empty:
+            return df
+        # Fallback to yfinance via get_stock_ohlcv
         return self.get_stock_ohlcv("^INDIAVIX", days=days)
 
     def get_sector_data(self, sector: str, days: int = 180) -> Optional[pd.DataFrame]:
