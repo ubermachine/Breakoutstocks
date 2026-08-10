@@ -71,6 +71,10 @@ class MarketDataClient:
         """Get company name for symbol. Delegates to DataLakeClient."""
         return self.lake.get_stock_name(symbol)
 
+    def get_stock_sector(self, symbol: str) -> str:
+        """Get sector for symbol. Delegates to DataLakeClient."""
+        return self.lake.get_stock_sector(symbol)
+
     def get_all_nse_tickers(self) -> List[str]:
         """Get list of available stock tickers. Delegates to DataLakeClient."""
         return self.lake.get_all_tickers()
@@ -94,6 +98,10 @@ class MarketDataClient:
     def get_vix_data(self, days: int = 30) -> Optional[pd.DataFrame]:
         """Get India VIX daily bars using ^INDIAVIX ticker."""
         return self.get_stock_ohlcv("^INDIAVIX", days=days)
+
+    def get_sector_data(self, sector: str, days: int = 180) -> Optional[pd.DataFrame]:
+        """Get sector index daily bars. Delegates to DataLakeClient."""
+        return self.lake.get_sector_index(sector, days=days)
 
     def get_market_regime(self) -> MarketRegime:
         """Aggregate market regime metrics (Nifty trend, VIX change, FII/DII bias, regime score).

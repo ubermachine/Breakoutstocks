@@ -46,10 +46,12 @@ class Config:
 
     # Price Score parameters
     PRICE_BREAKOUT_HIGH_PTS: float = 8.0
-    PRICE_CLOSE_ABOVE_PREV_PTS: float = 4.0
+    PRICE_ADX_TRENDING_PTS: float = 4.0
     PRICE_ABOVE_EMA_PTS: float = 4.0
     PRICE_RSI_MOMENTUM_PTS: float = 4.0
     RSI_MOMENTUM_MIN: float = 45.0
+    ADX_TREND_MIN: float = 20.0
+    ADX_STRONG_TREND: float = 25.0
 
     # Delivery Score parameters
     DELIVERY_RATIO_MIN: float = 1.3
@@ -104,6 +106,9 @@ class Config:
     DEFAULT_ATR_FALLBACK: float = 1.0
     RR_MEDIUM_THRESHOLD: float = 1.5
     RR_SMALL_THRESHOLD: float = 1.2
+    GAP_TOLERANCE_DEFAULT: float = 1.5
+    SUPERTREND_PERIOD: int = 10
+    SUPERTREND_MULT: float = 2.0
 
     # Breakout & Reversal thresholds
     VOLUME_RATIO_BREAKOUT: float = 1.5

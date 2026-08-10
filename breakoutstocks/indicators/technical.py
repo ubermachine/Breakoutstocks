@@ -65,6 +65,37 @@ def calculate_all_indicators(df: pd.DataFrame) -> Optional[pd.DataFrame]:
     tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
     df["ATR"] = tr.ewm(alpha=1/14, adjust=False).mean()
 
+    # 5b. Supertrend (ATR Multiplier = 2.0, Period = 10)
+    st_mult = 2.0
+    st_period = 10
+    hl2 = (df["High"] + df["Low"]) / 2.0
+    st_atr = (df["High"] - df["Low"]).rolling(st_period).mean()
+
+    upper_band = hl2 + st_mult * st_atr
+    lower_band = hl2 - st_mult * st_atr
+
+    supertrend = pd.Series(index=df.index, dtype=float)
+    direction = pd.Series(index=df.index, dtype=int)
+
+    supertrend.iloc[0] = upper_band.iloc[0]
+    direction.iloc[0] = -1
+
+    for i in range(1, len(df)):
+        if df["Close"].iloc[i] > upper_band.iloc[i-1]:
+            direction.iloc[i] = 1
+        elif df["Close"].iloc[i] < lower_band.iloc[i-1]:
+            direction.iloc[i] = -1
+        else:
+            direction.iloc[i] = direction.iloc[i-1]
+        
+        if direction.iloc[i] == 1:
+            supertrend.iloc[i] = max(lower_band.iloc[i], supertrend.iloc[i-1]) if direction.iloc[i-1] == 1 else lower_band.iloc[i]
+        else:
+            supertrend.iloc[i] = min(upper_band.iloc[i], supertrend.iloc[i-1]) if direction.iloc[i-1] == -1 else upper_band.iloc[i]
+
+    df["Supertrend"] = supertrend
+    df["Supertrend_Direction"] = direction
+
     # 6. Volume Indicators
     df["Volume_SMA_20"] = df["Volume"].rolling(window=20).mean()
     df["Volume_Ratio"] = (df["Volume"] / df["Volume_SMA_20"].replace(0, np.nan)).fillna(0.0)
@@ -114,5 +145,8 @@ def calculate_all_indicators(df: pd.DataFrame) -> Optional[pd.DataFrame]:
     df["atr"] = df["ATR"]
     df["volume_ratio"] = df["Volume_Ratio"]
     df["avg_volume_20d"] = df["Volume_SMA_20"]
+    df["adx"] = df["ADX"]
+    df["supertrend"] = df["Supertrend"]
+    df["supertrend_direction"] = df["Supertrend_Direction"]
 
     return df

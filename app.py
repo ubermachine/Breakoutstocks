@@ -20,6 +20,8 @@ import streamlit as st
 from breakoutstocks.config import Config
 from breakoutstocks.data.client import MarketDataClient
 from breakoutstocks.indicators.technical import calculate_all_indicators
+from breakoutstocks.indicators.multi_timeframe import get_weekly_bias
+from breakoutstocks.indicators.sector_strength import calculate_rs_rating
 from breakoutstocks.models.types import Advice, Confidence, MarketRegime, StockAnalysis, TradePlan
 from breakoutstocks.scanners.breakout_reversal import BreakoutReversalScanner
 from breakoutstocks.scanners.fo_scorer import TestableScorer
@@ -168,8 +170,17 @@ def analyze_fo_stock(
         clean_sym = symbol.replace(".NS", "").replace(".BO", "")
         options_feat = _extract_options_features(df_ind, symbol, data_client)
 
+        sector_name = data_client.get_stock_sector(symbol)
+        sector_rs = 0.0
+        if sector_name != "Unknown":
+            df_sector = data_client.get_sector_data(sector_name, days=180)
+            if df_sector is not None and not df_sector.empty:
+                sector_rs = calculate_rs_rating(df_stock, df_sector)
+
         row_dict = {
             "symbol": clean_sym,
+            "sector": sector_name,
+            "sector_rs": sector_rs,
             "close": float(latest["Close"]),
             "open": float(latest["Open"]),
             "high": float(latest["High"]),
@@ -182,6 +193,10 @@ def analyze_fo_stock(
             "atr": float(latest.get("ATR", latest["Close"] * 0.02)),
             "volume_ratio": float(latest.get("Volume_Ratio", 1.0)),
             "avg_volume_20d": float(latest.get("Volume_SMA_20", 100000.0)),
+            "adx": float(latest.get("ADX", 0.0)),
+            "supertrend": float(latest.get("Supertrend", 0.0)),
+            "supertrend_direction": int(latest.get("Supertrend_Direction", -1)),
+            "weekly_bias": get_weekly_bias(df_stock),
             "nifty_above_20_sma": market_regime.nifty_above_20_sma,
             "india_vix_change": market_regime.india_vix_change,
             "fii_dii_bias_positive": market_regime.fii_dii_bias_positive,
@@ -300,6 +315,22 @@ def create_price_chart(
                 line=dict(color="rgba(150, 150, 150, 0.5)", width=1, dash="dot"),
                 fill="tonexty",
                 fillcolor="rgba(200, 200, 200, 0.05)",
+            ),
+            row=1,
+            col=1,
+        )
+
+    if "Supertrend" in df.columns and "Supertrend_Direction" in df.columns:
+        colors = ["#00E676" if d == 1 else "#FF1744" for d in df["Supertrend_Direction"]]
+        
+        # We need to split into line segments by color or just draw a line and color it yellow
+        fig.add_trace(
+            go.Scatter(
+                x=x_axis,
+                y=df["Supertrend"],
+                mode="lines",
+                name="Supertrend",
+                line=dict(color="#FFD700", width=1.5, dash="dot"),
             ),
             row=1,
             col=1,
@@ -442,9 +473,25 @@ def main():
     st.title("📈 Breakoutstocks Unified Dashboard")
     st.caption("AI-Powered Technical, F&O, Multibagger & Market Regime Analytics Engine")
 
-    # 4 Main Tabs
-    tab1, tab2, tab3, tab4 = st.tabs(
-        ["📊 F&O Scanner", "💥 Breakout / Reversal", "💎 Multibagger", "🌡 Market Overview"]
+    with st.sidebar:
+        st.header("💼 Portfolio Heat Tracker")
+        account_equity = st.number_input("Account Equity (₹)", value=1000000, step=100000)
+        risk_per_trade = st.slider("Risk Per Trade (%)", 0.5, 3.0, 1.0, 0.1)
+        max_positions = st.slider("Max Open Positions", 1, 10, 7)
+        
+        rupee_risk = account_equity * (risk_per_trade / 100)
+        st.metric("Risk Per Trade", f"₹{rupee_risk:,.0f}")
+        
+        max_total_risk = max_positions * risk_per_trade
+        st.metric("Max Total Portfolio Risk", f"{max_total_risk:.1f}%", 
+                 delta="Warning: >6% Risk" if max_total_risk > 6.0 else "Safe",
+                 delta_color="inverse" if max_total_risk > 6.0 else "normal")
+        st.info("Rule: Max 2 positions per sector.")
+        st.session_state["rupee_risk"] = rupee_risk # Save for trade plan
+
+    # 5 Main Tabs
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(
+        ["📊 F&O Scanner", "💥 Breakout / Reversal", "💎 Multibagger", "🌡 Market Overview", "🔥 Fusion Scanner"]
     )
 
     # =========================================================================
@@ -588,9 +635,20 @@ def main():
                         with c2:
                             st.write(f"**Target 1:** ₹{tp.target_1:.2f}")
                             st.write(f"**Target 2:** ₹{tp.target_2:.2f}")
-                            st.write(f"**Recommended Size:** {tp.position_size}")
+                            
+                            rupee_risk = st.session_state.get("rupee_risk")
+                            risk_per_share = tp.entry - tp.stop_loss
+                            if rupee_risk and risk_per_share > 0:
+                                shares = int(rupee_risk / risk_per_share)
+                                st.write(f"**Recommended Size:** {shares} shares")
+                            else:
+                                st.write(f"**Recommended Size:** {tp.position_size}")
+                                
+                            st.write(f"**Max Chase:** ₹{tp.max_chase_price:.2f}")
                         with c3:
                             st.write(f"**Invalidation Rule:** {tp.invalidation}")
+                            st.write(f"**Trailing Stop:** {tp.trailing_stop_type}")
+                            st.write(f"**Time Stop:** {tp.decay_note}")
                             st.write(f"**Reasons:** {'; '.join(analysis_obj.reasons)}")
                             if analysis_obj.warnings:
                                 st.warning(f"Warnings: {'; '.join(analysis_obj.warnings)}")
@@ -838,6 +896,94 @@ def main():
             st.plotly_chart(fig_nifty, use_container_width=True)
         else:
             st.info("Nifty 50 data is currently unavailable from live/lake sources.")
+
+    # =========================================================================
+    # TAB 5: FUSION SCANNER
+    # =========================================================================
+    with tab5:
+        st.header("🔥 Fusion Scanner (The Watchlist)")
+        st.write("Combines F&O scores with Breakout signals. Only shows stocks that appear in BOTH scanners. Sorted by Fusion Score.")
+        
+        if "fo_results_df" not in st.session_state or st.session_state["fo_results_df"].empty or \
+           "br_results_df" not in st.session_state or st.session_state["br_results_df"].empty:
+            st.warning("⚠️ Please run BOTH the 'F&O Scan' (Tab 1) and 'Breakout & Reversal Scan' (Tab 2) first to generate the Fusion Watchlist.")
+        else:
+            fo_df = st.session_state["fo_results_df"].copy()
+            br_df = st.session_state["br_results_df"].copy()
+            
+            # Standardize symbol column for merge
+            if "Symbol" in fo_df.columns:
+                fo_df = fo_df.rename(columns={"Symbol": "symbol"})
+                
+            fusion_df = fo_df.merge(br_df, on="symbol", suffixes=("_fo", "_br"))
+            
+            if fusion_df.empty:
+                st.info("No stocks found that match signals in both scanners. Market might be choppy or lacking strong setups.")
+            else:
+                # Calculate fusion score: (F&O Score * 0.6) + (Breakout Strength * 0.4 * 10)
+                fusion_df["fusion_score"] = (fusion_df["Final Score"] * 0.6) + (fusion_df["strength_score"].clip(upper=10) * 4.0)
+                fusion_df = fusion_df.sort_values("fusion_score", ascending=False).reset_index(drop=True)
+                
+                st.subheader(f"🔥 Top Watchlist Candidates ({len(fusion_df)} stocks)")
+                
+                display_cols = [
+                    "symbol", "Name", "fusion_score", "Final Score", "signal_type", 
+                    "strength_score", "Advice", "Risk:Reward"
+                ]
+                
+                st.dataframe(
+                    fusion_df[display_cols],
+                    use_container_width=True,
+                    column_config={
+                        "fusion_score": st.column_config.NumberColumn("Fusion Score", format="%.1f"),
+                        "Final Score": st.column_config.NumberColumn("F&O Score", format="%.1f"),
+                        "strength_score": st.column_config.NumberColumn("Pattern Strength", format="%.1f"),
+                        "Risk:Reward": st.column_config.NumberColumn("Risk:Reward", format="%.2f"),
+                    }
+                )
+                
+                st.markdown("---")
+                st.subheader("🔍 Selected Fusion Stock Details")
+                fusion_symbols = fusion_df["symbol"].tolist()
+                sel_fusion_sym = st.selectbox("Select Stock", fusion_symbols, key="sb_fusion_detail")
+                
+                # We can reuse the Trade Plan card logic from Tab 1
+                if sel_fusion_sym in st.session_state.get("fo_analysis_dict", {}):
+                    analysis_obj, raw_sym = st.session_state["fo_analysis_dict"][sel_fusion_sym]
+                    if analysis_obj.trade_plan:
+                        tp = analysis_obj.trade_plan
+                        with st.expander("📌 Detailed Trade Plan Card", expanded=True):
+                            c1, c2, c3 = st.columns(3)
+                            with c1:
+                                st.write(f"**Entry Strategy:** {tp.entry_type}")
+                                st.write(f"**Entry Price:** ₹{tp.entry:.2f}")
+                                st.write(f"**Stop Loss:** ₹{tp.stop_loss:.2f}")
+                            with c2:
+                                st.write(f"**Target 1:** ₹{tp.target_1:.2f}")
+                                st.write(f"**Target 2:** ₹{tp.target_2:.2f}")
+                                
+                                rupee_risk = st.session_state.get("rupee_risk")
+                                risk_per_share = tp.entry - tp.stop_loss
+                                if rupee_risk and risk_per_share > 0:
+                                    shares = int(rupee_risk / risk_per_share)
+                                    st.write(f"**Recommended Size:** {shares} shares")
+                                else:
+                                    st.write(f"**Recommended Size:** {tp.position_size}")
+                                    
+                                st.write(f"**Max Chase:** ₹{tp.max_chase_price:.2f}")
+                            with c3:
+                                st.write(f"**Invalidation Rule:** {tp.invalidation}")
+                                st.write(f"**Trailing Stop:** {tp.trailing_stop_type}")
+                                st.write(f"**Time Stop:** {tp.decay_note}")
+                                st.write(f"**Reasons:** {'; '.join(analysis_obj.reasons)}")
+                                if analysis_obj.warnings:
+                                    st.warning(f"Warnings: {'; '.join(analysis_obj.warnings)}")
+                                    
+                df_stock = data_client.get_stock_ohlcv(raw_sym, days=180)
+                if df_stock is not None and not df_stock.empty:
+                    df_ind = calculate_all_indicators(df_stock)
+                    fig = create_price_chart(df_ind, sel_fusion_sym, analysis_obj.trade_plan if analysis_obj else None)
+                    st.plotly_chart(fig, use_container_width=True)
 
 
 if __name__ == "__main__":

@@ -48,6 +48,10 @@ def detect_breakout_signals(
     latest = df_ind.iloc[-1]
     prev = df_ind.iloc[-2] if len(df_ind) > 1 else latest
 
+    adx = latest.get("ADX", 0)
+    if adx < getattr(cfg, "ADX_TREND_MIN", 20.0):
+        return signals
+
     # 1. BREAKOUT_20DAY_HIGH
     if len(df_ind) >= 21:
         high_20 = df_ind["High"].iloc[-21:-1].max()

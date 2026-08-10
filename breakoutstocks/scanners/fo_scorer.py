@@ -41,8 +41,9 @@ class TestableScorer:
         if close > row.get('prev_high', 0):
             score += self.config.PRICE_BREAKOUT_HIGH_PTS
 
-        if close > row.get('prev_close', 0):
-            score += self.config.PRICE_CLOSE_ABOVE_PREV_PTS
+        adx = row.get('adx', 0)
+        if adx > getattr(self.config, 'ADX_STRONG_TREND', 25.0):
+            score += getattr(self.config, 'PRICE_ADX_TRENDING_PTS', 4.0)
 
         if close > row.get('ema_10', 0):
             score += self.config.PRICE_ABOVE_EMA_PTS
@@ -51,6 +52,12 @@ class TestableScorer:
         prev_rsi = row.get('prev_rsi', 0)
         if rsi > self.config.RSI_MOMENTUM_MIN and rsi > prev_rsi:
             score += self.config.PRICE_RSI_MOMENTUM_PTS
+
+        weekly_bias = row.get('weekly_bias', 'NEUTRAL')
+        if weekly_bias == 'BULLISH':
+            score += getattr(self.config, 'PRICE_WEEKLY_BIAS_PTS', 4.0)
+        elif weekly_bias == 'BEARISH':
+            score -= getattr(self.config, 'PRICE_WEEKLY_BIAS_PTS', 4.0)
 
         return min(score, self.config.PRICE_SCORE_MAX)
 
@@ -112,7 +119,14 @@ class TestableScorer:
         if row.get('fii_dii_bias_positive', False):
             score += self.config.MARKET_FII_DII_PTS
 
-        return min(score, self.config.MARKET_SCORE_MAX)
+        # Sector Relative Strength bonus/penalty
+        sector_rs = row.get("sector_rs", 0.0)
+        if sector_rs > 0.05:
+            score += 2.0  # Sector outperforming
+        elif sector_rs < -0.05:
+            score -= 2.0  # Sector underperforming
+
+        return min(max(score, 0.0), self.config.MARKET_SCORE_MAX)
 
     def calculate_risk_penalty(self, row: pd.Series) -> float:
         """Calculate risk penalties (0-15 points)."""
@@ -134,6 +148,10 @@ class TestableScorer:
         atr = row.get('atr', self.config.DEFAULT_ATR_FALLBACK)
         if distance < self.config.RESISTANCE_ATR_MULT * atr:
             penalty += self.config.RISK_RESISTANCE_CLOSE_PENALTY
+
+        import datetime
+        if datetime.date.today().weekday() == 3:  # Thursday
+            penalty += getattr(self.config, 'RISK_EXPIRY_PENALTY', 3.0)
 
         return min(penalty, self.config.RISK_PENALTY_MAX)
 
@@ -266,6 +284,25 @@ class TestableScorer:
         # Invalidation conditions
         invalidation = f"Close below {stop_loss:.2f} or put support breaks"
 
+        # Gap tolerance
+        atr_pct = (atr / close) * 100 if close > 0 else 2.0
+        gap_tolerance = max(getattr(self.config, 'GAP_TOLERANCE_DEFAULT', 1.5), atr_pct)
+        max_chase_price = round(entry * (1 + gap_tolerance / 100), 2)
+
+        # Supertrend trailing stop
+        supertrend_dir = int(row.get('supertrend_direction', -1))
+        trailing_stop_type = "supertrend" if supertrend_dir == 1 else "fixed"
+
+        # Time stop
+        if rr >= 2.0:
+            max_hold_days = 10
+        elif rr >= 1.5:
+            max_hold_days = 7
+        else:
+            max_hold_days = 5
+
+        decay_note = f"Time-stop: exit at market close on Day {max_hold_days} if no target hit"
+
         return TradePlan(
             entry=round(entry, 2),
             entry_type=entry_type,
@@ -275,6 +312,10 @@ class TestableScorer:
             risk_reward=rr,
             position_size=position_size,
             invalidation=invalidation,
+            max_chase_price=max_chase_price,
+            trailing_stop_type=trailing_stop_type,
+            max_hold_days=max_hold_days,
+            decay_note=decay_note,
         )
 
     def generate_reasons(self, row: pd.Series) -> List[str]:

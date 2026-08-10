@@ -206,3 +206,22 @@ class DataLakeClient:
                     return str(val)
 
         return str(symbol)
+
+    def get_stock_sector(self, symbol: str) -> str:
+        """Get sector name for a given ticker symbol.
+
+        Args:
+            symbol: Ticker symbol
+
+        Returns:
+            Sector string or 'Unknown' if not found
+        """
+        meta = self.get_stock_metadata()
+        if meta is not None and not meta.empty and "Ticker" in meta.columns and "Sector" in meta.columns:
+            symbol_clean = str(symbol).strip().upper()
+            matched = meta[meta["Ticker"].astype(str).str.upper() == symbol_clean]
+            if not matched.empty:
+                val = matched.iloc[0]["Sector"]
+                if pd.notna(val):
+                    return str(val)
+        return "Unknown"

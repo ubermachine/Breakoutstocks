@@ -29,6 +29,10 @@ class TradePlan:
     risk_reward: float
     position_size: str
     invalidation: str
+    max_chase_price: float = 0.0
+    trailing_stop_type: str = "fixed"
+    max_hold_days: int = 7
+    decay_note: str = ""
 
 
 @dataclass
