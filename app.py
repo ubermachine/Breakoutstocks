@@ -489,401 +489,227 @@ def main():
         st.info("Rule: Max 2 positions per sector.")
         st.session_state["rupee_risk"] = rupee_risk # Save for trade plan
 
-    # 5 Main Tabs
-    tab1, tab2, tab3, tab4, tab5 = st.tabs(
-        ["📊 F&O Scanner", "💥 Breakout / Reversal", "💎 Multibagger", "🌡 Market Overview", "🔥 Fusion Scanner"]
-    )
+    st.sidebar.markdown("---")
+    exchange = st.sidebar.radio("Exchange Universe", ["NSE", "BSE"])
+    fno_only = st.sidebar.checkbox("F&O Only", value=True, disabled=(exchange == "BSE"))
+
+    tab1, tab2 = st.tabs(["📊 Unified Scanner", "🌡 Market Overview"])
 
     # =========================================================================
-    # TAB 1: F&O SCANNER
+    # TAB 1: UNIFIED SCANNER
     # =========================================================================
     with tab1:
-        st.header("📊 F&O All-in-One Consolidated Scanner")
-        st.write("Scan liquid F&O stocks with real-time technicals, futures OI, option chain structure, and risk scoring.")
+        st.header("📊 Unified Breakout & F&O Scanner")
+        st.write("Scan stocks for price breakouts and optionally enrich with F&O options/futures scoring.")
 
-        col_ctrl1, col_ctrl2, col_ctrl3, col_ctrl4 = st.columns(4)
+        col_ctrl1, col_ctrl2, col_ctrl3 = st.columns(3)
         with col_ctrl1:
-            max_fo_stocks = st.slider("Max Stocks to Scan", 5, 100, 25, key="fo_max")
+            max_stocks = st.slider("Max Stocks to Scan", 5, 100, 25, key="max_scan")
         with col_ctrl2:
-            min_score_filter = st.slider("Min Final Score", 0, 100, 50, key="fo_min_score")
+            min_score_filter = st.slider("Min Final Score (F&O Only)", 0, 100, 0, key="min_score")
         with col_ctrl3:
             advice_options = [a.value for a in Advice]
             selected_advices = st.multiselect(
-                "Advice Filter",
+                "Advice Filter (F&O Only)",
                 advice_options,
                 default=["Strong Buy", "Buy", "Watch"],
-                key="fo_advices",
+                key="advices",
             )
-        with col_ctrl4:
-            rr_filter = st.checkbox("Risk:Reward > 1.2 Only", value=False, key="fo_rr_filter")
 
-        run_fo_scan = st.button("🚀 Run F&O Scan", type="primary", key="btn_run_fo")
+        run_scan = st.button("🚀 Run Scan", type="primary", key="btn_run")
 
-        if run_fo_scan:
+        if run_scan:
             progress_bar = st.progress(0.0)
             status_text = st.empty()
 
-            tickers = data_client.get_all_nse_tickers()
-            tickers_fo = [t for t in tickers if t.endswith(".NS")] if tickers else DEFAULT_NSE_FO_STOCKS
-            if not tickers_fo:
-                tickers_fo = DEFAULT_NSE_FO_STOCKS
+            # 1. Fetch Universe
+            if exchange == "NSE":
+                tickers = data_client.get_all_nse_tickers()
+                if fno_only:
+                    scan_universe = [t for t in tickers if t.endswith(".NS")] if tickers else DEFAULT_NSE_FO_STOCKS
+                else:
+                    scan_universe = tickers if tickers else DEFAULT_NSE_STOCKS
+            else:
+                scan_universe = DEFAULT_BSE_STOCKS
 
-            scan_universe = tickers_fo[:max_fo_stocks]
+            scan_universe = scan_universe[:max_stocks]
 
             status_text.text("Fetching market regime metrics...")
             market_regime = data_client.get_market_regime()
 
             results_list = []
             analysis_dict = {}
+            br_scanner = BreakoutReversalScanner(data_client)
 
             for idx, sym in enumerate(scan_universe):
                 status_text.text(f"Scanning ({idx + 1}/{len(scan_universe)}): {sym}")
-                analysis = analyze_fo_stock(sym, data_client, fo_scorer, market_regime)
+                
+                # Fetch Data & Calculate Indicators
+                df = data_client.get_stock_ohlcv(sym, days=180)
+                if df is None or df.empty:
+                    continue
+                df_ind = calculate_all_indicators(df)
+                if df_ind is None:
+                    continue
+                    
+                # Run Breakout Scanner
+                br_signals = br_scanner.detect_breakout_signals(df_ind, sym)
+                if not br_signals:
+                    continue  # Only keep stocks with a technical breakout
+                    
+                # Consolidate BR signal string
+                br_sig_str = ", ".join([s["type"] for s in br_signals])
+                
+                # Try F&O Scoring if requested
+                fo_analysis = None
+                if exchange == "NSE" and fno_only:
+                    fo_analysis = analyze_fo_stock(sym, data_client, fo_scorer, market_regime)
 
-                if analysis:
-                    analysis_dict[analysis.symbol] = (analysis, sym)
-                    tp = analysis.trade_plan
-
-                    results_list.append(
-                        {
-                            "Symbol": analysis.symbol,
-                            "Name": analysis.name,
-                            "Advice": analysis.advice.value,
-                            "Confidence": analysis.confidence.value,
-                            "Final Score": round(analysis.final_score, 1),
-                            "Entry": tp.entry if tp else None,
-                            "Stop Loss": tp.stop_loss if tp else None,
-                            "Target 1": tp.target_1 if tp else None,
-                            "Target 2": tp.target_2 if tp else None,
-                            "Risk:Reward": tp.risk_reward if tp else None,
-                            "Cash Score": round(analysis.cash_score, 1),
-                            "Price Score": round(analysis.price_score, 1),
-                            "Options Score": round(analysis.options_score, 1),
-                            "Futures Score": round(analysis.futures_score, 1),
-                            "Risk Penalty": round(analysis.risk_penalty, 1),
-                            "Reasons": "; ".join(analysis.reasons[:2]),
-                        }
-                    )
-
+                # Filter based on F&O Score if applicable
+                if fo_analysis:
+                    if fo_analysis.final_score < min_score_filter:
+                        continue
+                    if fo_analysis.advice.value not in selected_advices:
+                        continue
+                    
+                # Build Row
+                row = {
+                    "Symbol": sym,
+                    "Name": data_client.get_stock_name(sym),
+                    "Sector": data_client.get_stock_sector(sym),
+                    "Breakout Signal": br_sig_str,
+                }
+                
+                if fo_analysis:
+                    row["F&O Score"] = fo_analysis.final_score
+                    row["Advice"] = fo_analysis.advice.value
+                    row["Risk Reward"] = fo_analysis.trade_plan.risk_reward if fo_analysis.trade_plan else 0.0
+                    
+                    analysis_dict[sym] = (fo_analysis, sym)
+                else:
+                    row["F&O Score"] = "N/A"
+                    row["Advice"] = "N/A"
+                    row["Risk Reward"] = "N/A"
+                    
+                results_list.append(row)
                 progress_bar.progress((idx + 1) / len(scan_universe))
 
-            status_text.text("F&O Scan complete!")
-            st.session_state["fo_results_df"] = pd.DataFrame(results_list)
-            st.session_state["fo_analysis_dict"] = analysis_dict
+            status_text.text("Scan complete.")
+            progress_bar.empty()
 
-        # Render F&O Scan Results if available
-        if "fo_results_df" in st.session_state and not st.session_state["fo_results_df"].empty:
-            df_res = st.session_state["fo_results_df"].copy()
+            if not results_list:
+                st.warning("No stocks met the criteria.")
+            else:
+                df_res = pd.DataFrame(results_list)
+                if "F&O Score" in df_res.columns and df_res["F&O Score"].dtype != object:
+                    df_res = df_res.sort_values(by="F&O Score", ascending=False)
 
-            # Apply filters
-            df_filtered = df_res[df_res["Final Score"] >= min_score_filter]
-            if selected_advices:
-                df_filtered = df_filtered[df_filtered["Advice"].isin(selected_advices)]
-            if rr_filter and "Risk:Reward" in df_filtered.columns:
-                df_filtered = df_filtered[df_filtered["Risk:Reward"].fillna(0) >= 1.2]
+                st.subheader(f"Watchlist ({len(df_res)} stocks)")
+                st.dataframe(df_res, use_container_width=True, hide_index=True)
 
-            df_filtered = df_filtered.sort_values(by="Final Score", ascending=False).reset_index(drop=True)
+                if analysis_dict:
+                    st.session_state["unified_analysis_dict"] = analysis_dict
 
-            st.subheader(f"📋 Scan Results ({len(df_filtered)} stocks found)")
-            st.dataframe(
-                df_filtered,
-                use_container_width=True,
-                column_config={
-                    "Final Score": st.column_config.ProgressColumn(
-                        "Final Score", min_value=0, max_value=100, format="%.1f"
-                    ),
-                    "Risk:Reward": st.column_config.NumberColumn(format="%.2f"),
-                    "Entry": st.column_config.NumberColumn(format="₹%.2f"),
-                    "Stop Loss": st.column_config.NumberColumn(format="₹%.2f"),
-                    "Target 1": st.column_config.NumberColumn(format="₹%.2f"),
-                },
-            )
-
-            # Detail Drilldown
+        # Detail Drilldown
+        if "unified_analysis_dict" in st.session_state and st.session_state["unified_analysis_dict"]:
             st.markdown("---")
-            st.subheader("🔍 Selected Stock Detail Drill-Down")
-            available_symbols = df_filtered["Symbol"].tolist() if not df_filtered.empty else list(st.session_state["fo_analysis_dict"].keys())
+            st.subheader("🔍 F&O Detail Drill-Down")
+            available_symbols = list(st.session_state["unified_analysis_dict"].keys())
+            
+            selected_sym = st.selectbox("Select F&O Stock for Trade Plan & Chart", available_symbols, key="sb_detail")
+            analysis_obj, raw_sym = st.session_state["unified_analysis_dict"][selected_sym]
 
-            if available_symbols:
-                selected_sym = st.selectbox("Select Stock for Detailed Trade Plan & Chart", available_symbols, key="sb_fo_detail")
-                analysis_obj, raw_sym = st.session_state["fo_analysis_dict"][selected_sym]
+            # Key Metrics Cards
+            m_col1, m_col2, m_col3, m_col4, m_col5 = st.columns(5)
+            with m_col1:
+                st.metric("Advice", analysis_obj.advice.value)
+            with m_col2:
+                st.metric("Confidence", analysis_obj.confidence.value)
+            with m_col3:
+                st.metric("Final Score", f"{analysis_obj.final_score:.1f} / 100")
+            with m_col4:
+                rr_val = analysis_obj.trade_plan.risk_reward if analysis_obj.trade_plan else 0.0
+                st.metric("Risk/Reward", f"{rr_val:.2f}")
+            with m_col5:
+                # F&O signals list if any
+                st.metric("F&O Flags", len(analysis_obj.signals))
 
-                # Key Metrics Cards
-                m_col1, m_col2, m_col3, m_col4, m_col5 = st.columns(5)
-                with m_col1:
-                    st.metric("Advice", analysis_obj.advice.value)
-                with m_col2:
-                    st.metric("Confidence", analysis_obj.confidence.value)
-                with m_col3:
-                    st.metric("Final Score", f"{analysis_obj.final_score:.1f} / 100")
-                with m_col4:
-                    rr_val = analysis_obj.trade_plan.risk_reward if analysis_obj.trade_plan else 0.0
-                    st.metric("Risk:Reward", f"1:{rr_val:.2f}" if rr_val else "N/A")
-                with m_col5:
-                    entry_val = analysis_obj.trade_plan.entry if analysis_obj.trade_plan else 0.0
-                    st.metric("Entry Price", f"₹{entry_val:.2f}" if entry_val else "N/A")
+            st.markdown("### Trade Plan")
+            tp = analysis_obj.trade_plan
+            if tp:
+                c1, c2, c3 = st.columns(3)
+                with c1:
+                    st.write(f"**Entry Strategy:** {tp.entry_type}")
+                    st.write(f"**Entry Price:** ₹{tp.entry:.2f}")
+                    st.write(f"**Stop Loss:** ₹{tp.stop_loss:.2f}")
+                with c2:
+                    st.write(f"**Target 1:** ₹{tp.target_1:.2f}")
+                    st.write(f"**Target 2:** ₹{tp.target_2:.2f}")
+                    
+                    rupee_risk = st.session_state.get("rupee_risk")
+                    risk_per_share = tp.entry - tp.stop_loss
+                    if rupee_risk and risk_per_share > 0:
+                        shares = int(rupee_risk / risk_per_share)
+                        st.write(f"**Recommended Size:** {shares} shares")
+                    else:
+                        st.write(f"**Recommended Size:** {tp.position_size}")
+                        
+                    st.write(f"**Max Chase:** ₹{tp.max_chase_price:.2f}")
+                with c3:
+                    st.write(f"**Invalidation Rule:** {tp.invalidation}")
+                    st.write(f"**Trailing Stop:** {tp.trailing_stop_type}")
+                    st.write(f"**Time Stop:** {tp.decay_note}")
+                    st.write(f"**Reasons:** {'; '.join(analysis_obj.reasons)}")
+                    if analysis_obj.warnings:
+                        st.warning(f"Warnings: {'; '.join(analysis_obj.warnings)}")
 
-                # Trade Plan Card
-                if analysis_obj.trade_plan:
-                    tp = analysis_obj.trade_plan
-                    with st.expander("📌 Detailed Trade Plan Card", expanded=True):
-                        c1, c2, c3 = st.columns(3)
-                        with c1:
-                            st.write(f"**Entry Strategy:** {tp.entry_type}")
-                            st.write(f"**Entry Price:** ₹{tp.entry:.2f}")
-                            st.write(f"**Stop Loss:** ₹{tp.stop_loss:.2f}")
-                        with c2:
-                            st.write(f"**Target 1:** ₹{tp.target_1:.2f}")
-                            st.write(f"**Target 2:** ₹{tp.target_2:.2f}")
-                            
-                            rupee_risk = st.session_state.get("rupee_risk")
-                            risk_per_share = tp.entry - tp.stop_loss
-                            if rupee_risk and risk_per_share > 0:
-                                shares = int(rupee_risk / risk_per_share)
-                                st.write(f"**Recommended Size:** {shares} shares")
-                            else:
-                                st.write(f"**Recommended Size:** {tp.position_size}")
-                                
-                            st.write(f"**Max Chase:** ₹{tp.max_chase_price:.2f}")
-                        with c3:
-                            st.write(f"**Invalidation Rule:** {tp.invalidation}")
-                            st.write(f"**Trailing Stop:** {tp.trailing_stop_type}")
-                            st.write(f"**Time Stop:** {tp.decay_note}")
-                            st.write(f"**Reasons:** {'; '.join(analysis_obj.reasons)}")
-                            if analysis_obj.warnings:
-                                st.warning(f"Warnings: {'; '.join(analysis_obj.warnings)}")
-
-                # Component Score Breakdown
-                with st.expander("📊 Score Component Breakdown", expanded=False):
-                    sc1, sc2, sc3, sc4, sc5, sc6, sc7 = st.columns(7)
-                    sc1.metric("Cash (max 20)", f"{analysis_obj.cash_score:.1f}")
-                    sc2.metric("Price (max 20)", f"{analysis_obj.price_score:.1f}")
-                    sc3.metric("Delivery (max 10)", f"{analysis_obj.delivery_score:.1f}")
-                    sc4.metric("Futures (max 15)", f"{analysis_obj.futures_score:.1f}")
-                    sc5.metric("Options (max 20)", f"{analysis_obj.options_score:.1f}")
-                    sc6.metric("Market (max 10)", f"{analysis_obj.market_score:.1f}")
-                    sc7.metric("Risk Penalty", f"-{analysis_obj.risk_penalty:.1f}")
-
-                # Interactive Chart
-                df_stock = data_client.get_stock_ohlcv(raw_sym, days=180)
-                if df_stock is not None and not df_stock.empty:
-                    df_ind = calculate_all_indicators(df_stock)
-                    fig = create_price_chart(df_ind, selected_sym, analysis_obj.trade_plan)
-                    st.plotly_chart(fig, use_container_width=True)
+            # Interactive Chart
+            df_stock = data_client.get_stock_ohlcv(raw_sym, days=180)
+            if df_stock is not None and not df_stock.empty:
+                df_ind = calculate_all_indicators(df_stock)
+                fig = create_price_chart(df_ind, selected_sym, tp)
+                st.plotly_chart(fig, use_container_width=True)
 
     # =========================================================================
-    # TAB 2: BREAKOUT / REVERSAL SCANNER
+    # TAB 2: MARKET OVERVIEW
     # =========================================================================
     with tab2:
-        st.header("💥 Breakout & Trend Reversal Pattern Scanner")
-        st.write("Detect 20-day high breakouts, SMA 50/200 Golden Crosses, RSI oversold/overbought reversals, and MACD crossovers.")
-
-        b_col1, b_col2, b_col3 = st.columns(3)
-        with b_col1:
-            universe_choice = st.radio("Stock Universe", ["NSE", "BSE"], horizontal=True, key="br_univ")
-        with b_col2:
-            signal_filter_choice = st.selectbox(
-                "Signal Filter", ["All", "Breakout Only", "Reversal Only"], index=0, key="br_filt"
-            )
-        with b_col3:
-            br_max_stocks = st.slider("Max Stocks to Scan", 5, 100, 25, key="br_max")
-
-        run_br_scan = st.button("💥 Run Breakout & Reversal Scan", type="primary", key="btn_run_br")
-
-        if run_br_scan:
-            scanner = BreakoutReversalScanner(data_client=data_client)
-            if universe_choice == "NSE":
-                tickers = data_client.get_all_nse_tickers()
-                symbols_to_scan = [t for t in tickers if t.endswith(".NS")] if tickers else DEFAULT_NSE_STOCKS
-                if not symbols_to_scan:
-                    symbols_to_scan = DEFAULT_NSE_STOCKS
-            else:
-                symbols_to_scan = DEFAULT_BSE_STOCKS
-
-            symbols_to_scan = symbols_to_scan[:br_max_stocks]
-
-            br_prog = st.progress(0.0)
-            br_status = st.empty()
-
-            def br_callback(comp, tot):
-                br_prog.progress(comp / tot)
-                br_status.text(f"Scanning stock {comp}/{tot}...")
-
-            res_df = scanner.scan(symbols_to_scan, progress_callback=br_callback)
-            br_status.text("Breakout & Reversal scan complete!")
-            st.session_state["br_results_df"] = res_df
-
-        if "br_results_df" in st.session_state and not st.session_state["br_results_df"].empty:
-            df_br = st.session_state["br_results_df"].copy()
-
-            if signal_filter_choice == "Breakout Only":
-                df_br = df_br[df_br["signal_type"].isin(["BREAKOUT", "BREAKOUT_AND_REVERSAL"])]
-            elif signal_filter_choice == "Reversal Only":
-                df_br = df_br[df_br["signal_type"].isin(["REVERSAL", "BREAKOUT_AND_REVERSAL"])]
-
-            st.subheader(f"📋 Detected Signals ({len(df_br)} matches)")
-            display_cols = [
-                c for c in [
-                    "symbol", "name", "signal_type", "current_price",
-                    "change_percent", "volume_ratio", "rsi", "strength_score", "signal_count"
-                ] if c in df_br.columns
-            ]
-            st.dataframe(
-                df_br[display_cols],
-                use_container_width=True,
-                column_config={
-                    "current_price": st.column_config.NumberColumn("Price", format="₹%.2f"),
-                    "change_percent": st.column_config.NumberColumn("Change %", format="%.2f%%"),
-                    "volume_ratio": st.column_config.NumberColumn("Vol Ratio", format="%.2fx"),
-                    "strength_score": st.column_config.NumberColumn("Strength Score", format="%.1f"),
-                },
-            )
-
-            # Drilldown
-            st.markdown("---")
-            st.subheader("🔍 Selected Stock Signal Drill-Down")
-            br_symbols = df_br["symbol"].tolist()
-            if br_symbols:
-                sel_br_sym = st.selectbox("Select Stock for Detailed Signal Analysis", br_symbols, key="sb_br_detail")
-                selected_row = df_br[df_br["symbol"] == sel_br_sym].iloc[0]
-
-                s_c1, s_c2, s_c3, s_c4 = st.columns(4)
-                s_c1.metric("Signal Type", selected_row.get("signal_type", "N/A"))
-                s_c2.metric("Price", f"₹{selected_row.get('current_price', 0):.2f}")
-                s_c3.metric("Volume Ratio", f"{selected_row.get('volume_ratio', 0):.2f}x")
-                s_c4.metric("RSI", f"{selected_row.get('rsi', 0):.1f}")
-
-                signals_list = selected_row.get("signals", [])
-                if isinstance(signals_list, list) and signals_list:
-                    st.write("**Detected Pattern Signals:**")
-                    for sig in signals_list:
-                        st.info(f"🔹 **[{sig.get('type')}]** ({sig.get('strength')} strength): {sig.get('description')}")
-
-                df_br_chart = data_client.get_stock_ohlcv(sel_br_sym, days=180)
-                if df_br_chart is not None and not df_br_chart.empty:
-                    df_ind_br = calculate_all_indicators(df_br_chart)
-                    fig_br = create_price_chart(df_ind_br, sel_br_sym)
-                    st.plotly_chart(fig_br, use_container_width=True)
-
-    # =========================================================================
-    # TAB 3: MULTIBAGGER SCANNER
-    # =========================================================================
-    with tab3:
-        st.header("💎 Fundamental Multibagger Discovery Engine")
-        st.write("Screen high-growth stocks evaluating fundamental criteria (PE, revenue growth, profit margin, ROE, debt/equity) and adjusted multi-year price returns.")
-
-        m_col1, m_col2 = st.columns(2)
-        with m_col1:
-            years_horizon = st.radio("Lookback Horizon", [1, 3, 5], index=2, horizontal=True, key="mb_years")
-        with m_col2:
-            mb_max_stocks = st.slider("Max Stocks to Scan", 5, 100, 20, key="mb_max")
-
-        run_mb_scan = st.button("💎 Run Multibagger Scan", type="primary", key="btn_run_mb")
-
-        if run_mb_scan:
-            scanner = MultibaggerScanner(years=years_horizon, data_client=data_client)
-            tickers = data_client.get_all_nse_tickers()
-            symbols_to_scan = [t for t in tickers if t.endswith(".NS")] if tickers else DEFAULT_NSE_STOCKS
-            if not symbols_to_scan:
-                symbols_to_scan = DEFAULT_NSE_STOCKS
-
-            symbols_to_scan = symbols_to_scan[:mb_max_stocks]
-
-            mb_prog = st.progress(0.0)
-            mb_status = st.empty()
-
-            def mb_callback(comp, tot):
-                mb_prog.progress(comp / tot)
-                mb_status.text(f"Analyzing fundamentals ({comp}/{tot})...")
-
-            res_mb_df = scanner.scan(symbols_to_scan, progress_callback=mb_callback)
-            mb_status.text("Multibagger scan complete!")
-            st.session_state["mb_results_df"] = res_mb_df
-
-        if "mb_results_df" in st.session_state and not st.session_state["mb_results_df"].empty:
-            df_mb = st.session_state["mb_results_df"].copy()
-            st.subheader(f"🏆 Ranked Multibagger Candidates ({len(df_mb)} identified)")
-
-            mb_cols = [
-                c for c in [
-                    "symbol", "name", "return_pct", "fundamental_score",
-                    "pe_ratio", "revenue_growth", "profit_margin", "roe", "debt_to_equity", "market_cap"
-                ] if c in df_mb.columns
-            ]
-            st.dataframe(
-                df_mb[mb_cols],
-                use_container_width=True,
-                column_config={
-                    "return_pct": st.column_config.NumberColumn("Return %", format="%.2f%%"),
-                    "revenue_growth": st.column_config.NumberColumn("Revenue Growth", format="%.2f%%"),
-                    "profit_margin": st.column_config.NumberColumn("Profit Margin", format="%.2f%%"),
-                    "roe": st.column_config.NumberColumn("ROE", format="%.2f%%"),
-                    "fundamental_score": st.column_config.NumberColumn("Fund Score", format="%.1f / 5.0"),
-                },
-            )
-
-            # Drilldown
-            st.markdown("---")
-            st.subheader("🔍 Selected Multibagger Stock Fundamental Drill-Down")
-            mb_symbols = df_mb["symbol"].tolist()
-            if mb_symbols:
-                sel_mb_sym = st.selectbox("Select Stock for Fundamental Inspection", mb_symbols, key="sb_mb_detail")
-                selected_mb_row = df_mb[df_mb["symbol"] == sel_mb_sym].iloc[0]
-
-                mc1, mc2, mc3, mc4, mc5 = st.columns(5)
-                mc1.metric("PE Ratio", f"{selected_mb_row.get('pe_ratio', 0):.2f}")
-                mc2.metric("Revenue Growth", f"{(selected_mb_row.get('revenue_growth', 0) * 100):.1f}%")
-                mc3.metric("Profit Margin", f"{(selected_mb_row.get('profit_margin', 0) * 100):.1f}%")
-                mc4.metric("ROE", f"{(selected_mb_row.get('roe', 0) * 100):.1f}%")
-                mc5.metric("Debt to Equity", f"{selected_mb_row.get('debt_to_equity', 0):.2f}")
-
-                df_mb_chart = data_client.get_stock_ohlcv(sel_mb_sym, days=years_horizon * 365)
-                if df_mb_chart is not None and not df_mb_chart.empty:
-                    df_ind_mb = calculate_all_indicators(df_mb_chart)
-                    fig_mb = create_price_chart(df_ind_mb, sel_mb_sym)
-                    st.plotly_chart(fig_mb, use_container_width=True)
-
-    # =========================================================================
-    # TAB 4: MARKET OVERVIEW
-    # =========================================================================
-    with tab4:
-        st.header("🌡 Broad Market Regime & Nifty 50 Overview")
-        st.write("Real-time benchmark trend analysis, India VIX volatility gauge, and FII / DII institutional capital flow tracking.")
-
-        regime = data_client.get_market_regime()
-
-        # Top Metric Cards
+        st.header("🌡 Market Regime & Context")
+        
+        market_regime = data_client.get_market_regime()
+        st.write("Current market scoring and technical context based on Nifty 50 and FII/DII data.")
+        
         card1, card2, card3, card4, card5 = st.columns(5)
         with card1:
             st.metric(
-                "📈 Nifty 50 Trend",
-                regime.nifty_trend,
-                delta=f"{regime.nifty_change_pct:+.2f}%",
+                "Nifty Trend",
+                market_regime.nifty_trend,
+                delta="Above 20 SMA" if market_regime.nifty_trend == "Bullish" else "Below 20 SMA",
             )
         with card2:
             st.metric(
-                "⚡ India VIX Level",
-                f"{regime.vix_level:.2f}",
-                delta=f"{regime.vix_change_pct:+.2f}%",
+                "VIX Signal",
+                market_regime.vix_signal,
+                delta=f"{market_regime.vix_percent_change:.1f}%",
                 delta_color="inverse",
             )
         with card3:
             st.metric(
-                "🏛 FII Net Flow",
-                f"₹{regime.fii_net:,.0f} Cr",
-                delta=regime.fii_trend,
+                "FII Trend (₹ Cr)",
+                f"{market_regime.fii_net_crores:,.0f}" if market_regime.fii_net_crores else "N/A",
+                delta=market_regime.fii_trend,
             )
         with card4:
             st.metric(
-                "🏢 DII Net Flow",
-                f"₹{regime.dii_net:,.0f} Cr",
-                delta=regime.dii_trend,
+                "DII Trend (₹ Cr)",
+                f"{market_regime.dii_net_crores:,.0f}" if market_regime.dii_net_crores else "N/A",
+                delta=market_regime.dii_trend,
             )
         with card5:
             st.metric(
                 "🌡 Regime Score",
-                f"{regime.regime_score:.1f} / 10.0",
-                delta="Bullish" if regime.regime_score >= 6.0 else ("Bearish" if regime.regime_score <= 4.0 else "Neutral"),
+                f"{market_regime.regime_score:.1f} / 10.0",
+                delta="Bullish" if market_regime.regime_score >= 6.0 else ("Bearish" if market_regime.regime_score <= 4.0 else "Neutral"),
             )
 
         st.markdown("---")
@@ -896,95 +722,6 @@ def main():
             st.plotly_chart(fig_nifty, use_container_width=True)
         else:
             st.info("Nifty 50 data is currently unavailable from live/lake sources.")
-
-    # =========================================================================
-    # TAB 5: FUSION SCANNER
-    # =========================================================================
-    with tab5:
-        st.header("🔥 Fusion Scanner (The Watchlist)")
-        st.write("Combines F&O scores with Breakout signals. Only shows stocks that appear in BOTH scanners. Sorted by Fusion Score.")
-        
-        if "fo_results_df" not in st.session_state or st.session_state["fo_results_df"].empty or \
-           "br_results_df" not in st.session_state or st.session_state["br_results_df"].empty:
-            st.warning("⚠️ Please run BOTH the 'F&O Scan' (Tab 1) and 'Breakout & Reversal Scan' (Tab 2) first to generate the Fusion Watchlist.")
-        else:
-            fo_df = st.session_state["fo_results_df"].copy()
-            br_df = st.session_state["br_results_df"].copy()
-            
-            # Standardize symbol column for merge
-            if "Symbol" in fo_df.columns:
-                fo_df = fo_df.rename(columns={"Symbol": "symbol"})
-                
-            fusion_df = fo_df.merge(br_df, on="symbol", suffixes=("_fo", "_br"))
-            
-            if fusion_df.empty:
-                st.info("No stocks found that match signals in both scanners. Market might be choppy or lacking strong setups.")
-            else:
-                # Calculate fusion score: (F&O Score * 0.6) + (Breakout Strength * 0.4 * 10)
-                fusion_df["fusion_score"] = (fusion_df["Final Score"] * 0.6) + (fusion_df["strength_score"].clip(upper=10) * 4.0)
-                fusion_df = fusion_df.sort_values("fusion_score", ascending=False).reset_index(drop=True)
-                
-                st.subheader(f"🔥 Top Watchlist Candidates ({len(fusion_df)} stocks)")
-                
-                display_cols = [
-                    "symbol", "Name", "fusion_score", "Final Score", "signal_type", 
-                    "strength_score", "Advice", "Risk:Reward"
-                ]
-                
-                st.dataframe(
-                    fusion_df[display_cols],
-                    use_container_width=True,
-                    column_config={
-                        "fusion_score": st.column_config.NumberColumn("Fusion Score", format="%.1f"),
-                        "Final Score": st.column_config.NumberColumn("F&O Score", format="%.1f"),
-                        "strength_score": st.column_config.NumberColumn("Pattern Strength", format="%.1f"),
-                        "Risk:Reward": st.column_config.NumberColumn("Risk:Reward", format="%.2f"),
-                    }
-                )
-                
-                st.markdown("---")
-                st.subheader("🔍 Selected Fusion Stock Details")
-                fusion_symbols = fusion_df["symbol"].tolist()
-                sel_fusion_sym = st.selectbox("Select Stock", fusion_symbols, key="sb_fusion_detail")
-                
-                # We can reuse the Trade Plan card logic from Tab 1
-                if sel_fusion_sym in st.session_state.get("fo_analysis_dict", {}):
-                    analysis_obj, raw_sym = st.session_state["fo_analysis_dict"][sel_fusion_sym]
-                    if analysis_obj.trade_plan:
-                        tp = analysis_obj.trade_plan
-                        with st.expander("📌 Detailed Trade Plan Card", expanded=True):
-                            c1, c2, c3 = st.columns(3)
-                            with c1:
-                                st.write(f"**Entry Strategy:** {tp.entry_type}")
-                                st.write(f"**Entry Price:** ₹{tp.entry:.2f}")
-                                st.write(f"**Stop Loss:** ₹{tp.stop_loss:.2f}")
-                            with c2:
-                                st.write(f"**Target 1:** ₹{tp.target_1:.2f}")
-                                st.write(f"**Target 2:** ₹{tp.target_2:.2f}")
-                                
-                                rupee_risk = st.session_state.get("rupee_risk")
-                                risk_per_share = tp.entry - tp.stop_loss
-                                if rupee_risk and risk_per_share > 0:
-                                    shares = int(rupee_risk / risk_per_share)
-                                    st.write(f"**Recommended Size:** {shares} shares")
-                                else:
-                                    st.write(f"**Recommended Size:** {tp.position_size}")
-                                    
-                                st.write(f"**Max Chase:** ₹{tp.max_chase_price:.2f}")
-                            with c3:
-                                st.write(f"**Invalidation Rule:** {tp.invalidation}")
-                                st.write(f"**Trailing Stop:** {tp.trailing_stop_type}")
-                                st.write(f"**Time Stop:** {tp.decay_note}")
-                                st.write(f"**Reasons:** {'; '.join(analysis_obj.reasons)}")
-                                if analysis_obj.warnings:
-                                    st.warning(f"Warnings: {'; '.join(analysis_obj.warnings)}")
-                                    
-                df_stock = data_client.get_stock_ohlcv(raw_sym, days=180)
-                if df_stock is not None and not df_stock.empty:
-                    df_ind = calculate_all_indicators(df_stock)
-                    fig = create_price_chart(df_ind, sel_fusion_sym, analysis_obj.trade_plan if analysis_obj else None)
-                    st.plotly_chart(fig, use_container_width=True)
-
 
 if __name__ == "__main__":
     main()
