@@ -504,7 +504,7 @@ def main():
 
         col_ctrl1, col_ctrl2, col_ctrl3 = st.columns(3)
         with col_ctrl1:
-            max_stocks = st.slider("Max Stocks to Scan", 5, 100, 25, key="max_scan")
+            max_stocks = st.slider("Max Stocks to Scan", 5, 250, 50, key="max_scan")
         with col_ctrl2:
             min_score_filter = st.slider("Min Final Score (F&O Only)", 0, 100, 0, key="min_score")
         with col_ctrl3:
